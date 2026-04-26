@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Detection & Recovery — Live Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg: #080c14;
+    --surface: #0d1422;
+    --surface2: #111a2e;
+    --border: #1a2540;
+    --border2: #1f2e4a;
+    --green: #00e87a;
+    --green-dim: #00e87a22;
+    --green-mid: #00e87a44;
+    --red: #ff3b5c;
+    --red-dim: #ff3b5c22;
+    --amber: #ffb800;
+    --amber-dim: #ffb80022;
+    --blue: #3b8eff;
+    --blue-dim: #3b8eff22;
+    --text: #e8edf5;
+    --text-muted: #4a5a7a;
+    --text-mid: #8a9bbf;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,232,122,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,232,122,0.015) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap { position: relative; z-index: 1; padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  .logo-mark {
+    width: 36px; height: 36px;
+    border: 1.5px solid var(--green);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--sans);
+    font-size: 13px; font-weight: 800;
+    color: var(--green);
+  }
+  .header-title {
+    font-family: var(--sans);
+    font-size: 15px; font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.02em;
+  }
+  .header-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; letter-spacing: 0.05em; }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .live-badge {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; color: var(--green);
+    letter-spacing: 0.08em; font-weight: 500;
+  }
+  .live-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+  .clock { font-size: 11px; color: var(--text-muted); }
+
+  .server-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+
+  .server-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    transition: border-color 0.4s;
+    position: relative;
+    overflow: hidden;
+  }
+  .server-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--green);
+    transition: background 0.4s;
+  }
+  .server-card.down::before { background: var(--red); }
+  .server-card.down { border-color: #ff3b5c33; }
+  .server-card.active-mode::before { background: var(--amber); }
+
+  .srv-top { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .status-ring {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 1.5px solid var(--green);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    flex-shrink: 0;
+    transition: border-color 0.4s;
+  }
+  .status-ring.down { border-color: var(--red); }
+  .status-ring.amber { border-color: var(--amber); }
+  .status-ring::after {
+    content: '';
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--green);
+    transition: background 0.4s;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .status-ring.down::after { background: var(--red); animation: none; }
+  .status-ring.amber::after { background: var(--amber); }
+
+  .srv-info { flex: 1; }
+  .srv-name { font-family: var(--sans); font-size: 14px; font-weight: 700; color: var(--text); }
+  .srv-port { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+  .srv-badge {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+    padding: 3px 8px; border-radius: 4px;
+  }
+  .badge-online  { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-mid); }
+  .badge-down    { background: var(--red-dim);   color: var(--red);   border: 1px solid #ff3b5c44; }
+  .badge-active  { background: var(--amber-dim); color: var(--amber); border: 1px solid #ffb80044; }
+  .badge-standby { background: #1a2540; color: var(--text-muted); border: 1px solid var(--border); }
+
+  .srv-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .stat-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .stat-label { font-size: 9px; color: var(--text-muted); letter-spacing: 0.06em; margin-bottom: 4px; text-transform: uppercase; }
+  .stat-val { font-size: 22px; font-weight: 700; font-family: var(--sans); color: var(--text); line-height: 1; }
+  .stat-val.green { color: var(--green); }
+  .stat-val.red   { color: var(--red); }
+  .stat-val.amber { color: var(--amber); }
+
+  .hb-wrap { }
+  .hb-label { font-size: 9px; color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; }
+  .hb-canvas-wrap { position: relative; height: 36px; background: var(--surface2); border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
+  canvas.hb-canvas { display: block; width: 100%; height: 36px; }
+
+  .mid-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .card-title {
+    font-size: 9px; color: var(--text-muted);
+    letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .mode-row { display: flex; gap: 6px; margin-bottom: 10px; }
+  .mode-btn {
+    flex: 1; padding: 8px 4px;
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    background: var(--surface2);
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 10px; font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+    letter-spacing: 0.04em;
+  }
+  .mode-btn:hover  { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+  .mode-btn.active { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+
+  /* stress burst input row */
+  .stress-row {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .stress-row.visible { display: flex; }
+  .stress-row label { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+  .stress-row input {
+    width: 70px;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 5px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 8px;
+    outline: none;
+  }
+  .stress-row input:focus { border-color: var(--green); }
+
+  .client-status { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .client-routing { font-size: 11px; color: var(--text-mid); }
+  .client-routing strong { color: var(--green); }
+  .client-routing.on-backup strong { color: var(--amber); }
+
+  .progress-wrap { margin-bottom: 14px; }
+  .progress-label { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-bottom: 5px; }
+  .progress-bar { height: 3px; background: var(--border2); border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width 0.4s; width: 0%; }
+
+  .action-btn {
+    width: 100%; padding: 9px;
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-mid);
+    font-family: var(--mono);
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 6px;
+    text-align: left;
+    letter-spacing: 0.02em;
+  }
+  .action-btn:hover         { border-color: var(--blue); color: var(--blue); background: var(--blue-dim); }
+  .action-btn.danger:hover  { border-color: var(--red);  color: var(--red);  background: var(--red-dim); }
+  .action-btn.active-start  { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+  .action-btn .btn-icon { margin-right: 8px; }
+
+  .topology { display: flex; flex-direction: column; gap: 10px; }
+  .topo-row { display: flex; align-items: center; gap: 0; }
+  .topo-node {
+    padding: 7px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border2);
+    font-size: 10px; font-weight: 500;
+    background: var(--surface2);
+    color: var(--text-mid);
+    white-space: nowrap;
+    min-width: 90px;
+    text-align: center;
+  }
+  .topo-node.online      { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+  .topo-node.offline     { border-color: var(--red);   color: var(--red);   background: var(--red-dim); }
+  .topo-node.client-node { border-color: var(--blue);  color: var(--blue);  background: var(--blue-dim); }
+  .topo-line {
+    flex: 1; height: 1px; background: var(--border2);
+    position: relative; margin: 0 4px;
+  }
+  .topo-line.active   { background: var(--green); }
+  .topo-line.inactive { background: var(--border); opacity: 0.4; }
+  .topo-line-label {
+    position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+    font-size: 9px; color: var(--text-muted); white-space: nowrap;
+  }
+  .topo-arrow {
+    width: 0; height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 6px solid var(--green);
+    flex-shrink: 0;
+  }
+  .topo-arrow.inactive { border-left-color: var(--border2); }
+
+  .bottom-grid { display: grid; grid-template-columns: 280px 1fr; gap: 14px; }
+
+  .timeline { display: flex; flex-direction: column; gap: 0; }
+  .tl-item { display: flex; gap: 12px; position: relative; padding-bottom: 14px; }
+  .tl-item:last-child { padding-bottom: 0; }
+  .tl-left { display: flex; flex-direction: column; align-items: center; }
+  .tl-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+  .tl-line { flex: 1; width: 1px; background: var(--border); margin-top: 4px; }
+  .tl-item:last-child .tl-line { display: none; }
+  .tl-event { font-size: 11px; color: var(--text); margin-bottom: 2px; }
+  .tl-time  { font-size: 10px; color: var(--text-muted); }
+
+  .feed { display: flex; flex-direction: column; gap: 5px; max-height: 220px; overflow-y: auto; }
+  .feed::-webkit-scrollbar { width: 3px; }
+  .feed::-webkit-scrollbar-track { background: transparent; }
+  .feed::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .feed-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 11px;
+    animation: slideIn 0.25s ease;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .feed-tag {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+    padding: 2px 6px; border-radius: 3px; flex-shrink: 0;
+  }
+  .tag-primary { background: var(--blue-dim);  color: var(--blue);  border: 1px solid #3b8eff33; }
+  .tag-backup  { background: var(--amber-dim); color: var(--amber); border: 1px solid #ffb80033; }
+  .tag-system  { background: var(--green-dim); color: var(--green); border: 1px solid #00e87a33; }
+  .feed-msg    { color: var(--text-mid); flex: 1; font-size: 10px; }
+  .feed-time   { color: var(--text-muted); font-size: 10px; flex-shrink: 0; }
+  .feed-ok     { color: var(--green); font-size: 10px; }
+  .feed-err    { color: var(--red);   font-size: 10px; }
+  .feed-warn   { color: var(--amber); font-size: 10px; }
+
+  .empty-feed { text-align: center; padding: 30px; color: var(--text-muted); font-size: 11px; }
+
+  .alert-banner {
+    display: none;
+    background: var(--red-dim);
+    border: 1px solid #ff3b5c55;
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 14px;
+    font-size: 11px;
+    color: var(--red);
+    align-items: center;
+    gap: 10px;
+    animation: slideIn 0.3s ease;
+  }
+  .alert-banner.show     { display: flex; }
+  .alert-banner.recovery { background: var(--green-dim); border-color: #00e87a55; color: var(--green); }
+  .alert-banner.warning  { background: var(--amber-dim); border-color: #ffb80055; color: var(--amber); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <div class="header-left">
+      <div class="logo-mark">D/R</div>
+      <div>
+        <div class="header-title">Detection & Recovery</div>
+        <div class="header-sub">PRIMARY/BACKUP FAILOVER DASHBOARD</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+      <div class="clock" id="clock">--:--:--</div>
+    </div>
+  </div>
+
+  <div class="alert-banner" id="alert-banner">
+    <span id="alert-text"></span>
+  </div>
+
+  <!-- Server cards -->
+  <div class="server-grid">
+    <div class="server-card" id="primary-card">
+      <div class="srv-top">
+        <div class="status-ring" id="primary-ring"></div>
+        <div class="srv-info">
+          <div class="srv-name">Primary Server</div>
+          <div class="srv-port">localhost:5000</div>
+        </div>
+        <div class="srv-badge badge-online" id="primary-badge">ONLINE</div>
+      </div>
+      <div class="srv-stats">
+        <div class="stat-box">
+          <div class="stat-label">Requests handled</div>
+          <div class="stat-val" id="primary-reqs">—</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Backup reachable</div>
+          <div class="stat-val green" id="primary-backup-reach">—</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Uptime</div>
+          <div class="stat-val" id="primary-uptime">—</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Status</div>
+          <div class="stat-val green" id="primary-status-val">—</div>
+        </div>
+      </div>
+      <div class="hb-wrap">
+        <div class="hb-label">Heartbeat sent</div>
+        <div class="hb-canvas-wrap">
+          <canvas class="hb-canvas" id="primary-hb" height="36"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="server-card" id="backup-card">
+      <div class="srv-top">
+        <div class="status-ring" id="backup-ring"></div>
+        <div class="srv-info">
+          <div class="srv-name">Backup Server</div>
+          <div class="srv-port">localhost:5001</div>
+        </div>
+        <div class="srv-badge badge-standby" id="backup-badge">STANDBY</div>
+      </div>
+      <div class="srv-stats">
+        <div class="stat-box">
+          <div class="stat-label">Records replicated</div>
+          <div class="stat-val" id="backup-replicated">—</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Primary alive</div>
+          <div class="stat-val green" id="backup-primary-alive">—</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Requests handled</div>
+          <div class="stat-val" id="backup-reqs">—</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Last heartbeat</div>
+          <div class="stat-val" id="backup-hb-ago">—</div>
+        </div>
+      </div>
+      <div class="hb-wrap">
+        <div class="hb-label">Heartbeat received</div>
+        <div class="hb-canvas-wrap">
+          <canvas class="hb-canvas" id="backup-hb" height="36"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client + Topology -->
+  <div class="mid-grid">
+    <div class="card">
+      <div class="card-title">Client control</div>
+
+      <div class="mode-row">
+        <button class="mode-btn active" id="btn-simple"  onclick="setMode('simple',  this)">Simple</button>
+        <button class="mode-btn"        id="btn-stress"  onclick="setMode('stress',  this)">Stress</button>
+        <button class="mode-btn"        id="btn-session" onclick="setMode('session', this)">Session</button>
+      </div>
+
+      <div class="stress-row" id="stress-row">
+        <label>Burst size:</label>
+        <input type="number" id="burst-input" value="20" min="1" max="500">
+      </div>
+
+      <div class="client-status">
+        <div class="client-routing" id="routing-label">
+          Routing to: <strong>Primary</strong>
+        </div>
+        <div style="font-size:10px; color:var(--text-muted);" id="req-counter">—</div>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress-label">
+          <span id="progress-label-text">Progress</span>
+          <span id="progress-pct">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+      </div>
+
+      <button class="action-btn" id="start-btn" onclick="startClient()">
+        <span class="btn-icon">▶</span> Start client
+      </button>
+      <button class="action-btn danger" id="stop-btn" onclick="stopClient()" style="display:none;">
+        <span class="btn-icon">■</span> Stop client
+      </button>
+      <button class="action-btn danger" onclick="simulateFailure()">
+        <span class="btn-icon">✕</span> Simulate primary failure
+      </button>
+      <button class="action-btn" onclick="restartPrimary()">
+        <span class="btn-icon">↺</span> Restart primary
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Network topology</div>
+      <div class="topology">
+        <div class="topo-row" style="margin-top:18px;">
+          <div class="topo-node client-node">CLIENT</div>
+          <div class="topo-line active" id="topo-line-primary" style="position:relative;">
+            <span class="topo-line-label">HTTP POST /request</span>
+          </div>
+          <div class="topo-arrow" id="topo-arrow-primary"></div>
+          <div class="topo-node online" id="topo-primary">PRIMARY :5000</div>
+        </div>
+        <div class="topo-row">
+          <div style="width:90px; flex-shrink:0;"></div>
+          <div style="width:4px; flex-shrink:0;"></div>
+          <div style="flex:1; display:flex; justify-content:center;">
+            <div style="width:1px; height:20px; background:var(--border2);"></div>
+          </div>
+          <div style="width:6px;"></div>
+          <div style="width:90px; flex-shrink:0; display:flex; align-items:center; gap:4px; padding-left:10px;">
+            <div style="width:1px; height:20px; background:var(--border2);"></div>
+          </div>
+        </div>
+        <div class="topo-row">
+          <div class="topo-node client-node" style="opacity:0;">X</div>
+          <div class="topo-line inactive" id="topo-line-backup" style="position:relative;">
+            <span class="topo-line-label">failover</span>
+          </div>
+          <div class="topo-arrow inactive" id="topo-arrow-backup"></div>
+          <div class="topo-node" id="topo-backup">BACKUP :5001</div>
+        </div>
+        <div class="topo-row" style="margin-top:8px;">
+          <div style="width:90px; flex-shrink:0;"></div>
+          <div style="flex:1;"></div>
+          <div style="width:6px;"></div>
+          <div style="width:90px; flex-shrink:0; font-size:9px; color:var(--text-muted); text-align:center;">
+            ↕ heartbeat / replicate
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Timeline + Feed -->
+  <div class="bottom-grid">
+    <div class="card">
+      <div class="card-title">Failover timeline</div>
+      <div class="timeline" id="timeline">
+        <div class="empty-feed">No events yet</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Live request feed</div>
+      <div class="feed" id="feed">
+        <div class="empty-feed">Waiting for requests...</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const PRIMARY    = 'http://127.0.0.1:5000';
+  const BACKUP     = 'http://127.0.0.1:5001';
+  const CLIENT_SRV = 'http://127.0.0.1:5002';
+
+  // State tracking
+  let primaryUp       = true;
+  let prevPrimaryUp   = true;
+  let backupMode      = 'STANDBY';
+  let prevBackupMode  = 'STANDBY';
+  let clientRunning   = false;
+  let prevClientRunning = false;
+  let currentMode     = 'simple';
+  let lastFeedLen     = 0;
+
+  let hbPrimaryHistory = [];
+  let hbBackupHistory  = [];
+  const HB_MAX = 30;
+
+  // ─── Mode selection ──────────────────────────────────────────────────────────
+
+  function setMode(m, btn) {
+    if (clientRunning) return;   // don't switch mid-run
+    currentMode = m;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const stressRow = document.getElementById('stress-row');
+    stressRow.classList.toggle('visible', m === 'stress');
+
+    const labelText = document.getElementById('progress-label-text');
+    labelText.textContent =
+      m === 'session' ? 'Continuous session' :
+      m === 'stress'  ? 'Stress burst' : 'Progress';
+
+    if (m === 'session') {
+      document.getElementById('progress-fill').style.width = '0%';
+      document.getElementById('progress-pct').textContent = '—';
+    }
+  }
+
+  // ─── Start / Stop ────────────────────────────────────────────────────────────
+
+  async function startClient() {
+    const body = { mode: currentMode };
+    if (currentMode === 'stress') {
+      body.stress_burst = parseInt(document.getElementById('burst-input').value) || 20;
+    }
+
+    try {
+      const res = await fetch(CLIENT_SRV + '/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const d = await res.json();
+      if (d.error) {
+        showAlert('Client: ' + d.error, 'warning');
+        return;
+      }
+      addTimeline('Client started — ' + currentMode + ' mode', '#3b8eff');
+      document.getElementById('start-btn').style.display = 'none';
+      document.getElementById('stop-btn').style.display  = 'block';
+      clientRunning = true;
+    } catch(e) {
+      showAlert('Cannot reach client server (5002). Is it running?', false);
+    }
+  }
+
+  async function stopClient() {
+    try {
+      await fetch(CLIENT_SRV + '/stop', { method: 'POST' });
+      addTimeline('Client stopped manually', '#4a5a7a');
+      document.getElementById('start-btn').style.display = 'block';
+      document.getElementById('stop-btn').style.display  = 'none';
+      clientRunning = false;
+    } catch(e) {
+      showAlert('Cannot reach client server (5002)', false);
+    }
+  }
+
+  // ─── Simulate failure ────────────────────────────────────────────────────────
+
+    async function simulateFailure() {
+        try {
+            await fetch(PRIMARY + '/shutdown', { method: 'POST' });
+            addTimeline('Primary failure simulated', '#ff3b5c');
+            showAlert('Primary is shutting down — watching for failover...', false);
+        } catch(e) {
+            // fetch may throw as the server dies mid-response, that's fine
+            addTimeline('Primary failure simulated', '#ff3b5c');
+            showAlert('Primary is shutting down — watching for failover...', false);
+        }
+    }
+
+    async function restartPrimary() {
+        try {
+            await fetch(CLIENT_SRV + '/restart-primary', { method: 'POST' });
+            addTimeline('Primary restart requested', '#00e87a');
+            showAlert('Primary restarting — watch the server card...', 'recovery');
+        } catch(e) {
+            showAlert('Could not reach client server', false);
+        }
+    }
+
+  // ─── Alerts ──────────────────────────────────────────────────────────────────
+
+  function showAlert(msg, type) {
+    // type: true/'recovery' = green, 'warning' = amber, false = red
+    const el   = document.getElementById('alert-banner');
+    const text = document.getElementById('alert-text');
+    text.textContent = msg;
+    el.className = 'alert-banner show';
+    if (type === true || type === 'recovery') el.classList.add('recovery');
+    else if (type === 'warning')               el.classList.add('warning');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove('show'), 6000);
+  }
+
+  // ─── Feed & Timeline ─────────────────────────────────────────────────────────
+
+  function addFeedItem(who, msg, ts, status) {
+    const feed  = document.getElementById('feed');
+    const empty = feed.querySelector('.empty-feed');
+    if (empty) empty.remove();
+
+    const time = ts || new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const item = document.createElement('div');
+    item.className = 'feed-item';
+
+    const tagClass =
+      who === 'PRIMARY' ? 'tag-primary' :
+      who === 'BACKUP'  ? 'tag-backup'  :
+      who === 'SYSTEM'  ? 'tag-system'  : '';
+    const tagHtml    = tagClass ? `<span class="feed-tag ${tagClass}">${who}</span>` : '';
+    const statusHtml =
+      status === 'OK'      ? '<span class="feed-ok">OK</span>'   :
+      status === 'FAIL'    ? '<span class="feed-err">FAIL</span>' :
+      status === 'TIMEOUT' ? '<span class="feed-warn">TMO</span>' : '';
+
+    item.innerHTML = `${tagHtml}<span class="feed-msg">${msg}</span><span class="feed-time">${time}</span>${statusHtml}`;
+    feed.insertBefore(item, feed.firstChild);
+    if (feed.children.length > 20) feed.removeChild(feed.lastChild);
+  }
+
+  function addTimeline(text, color) {
+    const tl    = document.getElementById('timeline');
+    const empty = tl.querySelector('.empty-feed');
+    if (empty) empty.remove();
+
+    const time = new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const item = document.createElement('div');
+    item.className = 'tl-item';
+    item.innerHTML = `
+      <div class="tl-left">
+        <div class="tl-dot" style="background:${color};"></div>
+        <div class="tl-line"></div>
+      </div>
+      <div class="tl-content">
+        <div class="tl-event">${text}</div>
+        <div class="tl-time">${time}</div>
+      </div>`;
+    tl.insertBefore(item, tl.firstChild);
+    if (tl.children.length > 8) tl.removeChild(tl.lastChild);
+  }
+
+  // ─── Heartbeat canvas ────────────────────────────────────────────────────────
+
+  function drawHb(canvasId, history, color) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W   = canvas.offsetWidth || 300;
+    const H   = 36;
+    canvas.width  = W;
+    canvas.height = H;
+    ctx.clearRect(0, 0, W, H);
+
+    const barW = 6, gap = 3;
+    for (let i = 0; i < history.length && i < HB_MAX; i++) {
+      const val = history[history.length - 1 - i];
+      const x   = W - (i + 1) * (barW + gap);
+      const h   = val ? (10 + Math.random() * 16) : 3;
+      const y   = H - h - 4;
+      ctx.fillStyle = val
+        ? (i < 3 ? color : color + '66')
+        : '#ff3b5c' + (i < 3 ? 'cc' : '44');
+      ctx.beginPath();
+      ctx.roundRect(x, y, barW, h, 2);
+      ctx.fill();
+    }
+  }
+
+  // ─── Poll primary ────────────────────────────────────────────────────────────
+
+  async function pollPrimary() {
+    try {
+      const res = await fetch(PRIMARY + '/status', { signal: AbortSignal.timeout(1500) });
+      const d   = await res.json();
+
+      primaryUp = true;
+      hbPrimaryHistory.push(true);
+      if (hbPrimaryHistory.length > HB_MAX) hbPrimaryHistory.shift();
+
+      document.getElementById('primary-reqs').textContent      = d.requests_processed;
+      document.getElementById('primary-uptime').textContent     = formatUptime(d.uptime_seconds);
+      document.getElementById('primary-status-val').textContent = 'ONLINE';
+      document.getElementById('primary-status-val').className   = 'stat-val green';
+
+      const reach   = d.backup_reachable;
+      const reachEl = document.getElementById('primary-backup-reach');
+      reachEl.textContent = reach ? 'Yes' : 'No';
+      reachEl.className   = 'stat-val ' + (reach ? 'green' : 'red');
+
+      document.getElementById('primary-card').className  = 'server-card';
+      document.getElementById('primary-ring').className  = 'status-ring';
+      document.getElementById('primary-badge').className = 'srv-badge badge-online';
+      document.getElementById('primary-badge').textContent = 'ONLINE';
+      document.getElementById('topo-primary').className  = 'topo-node online';
+
+      if (!prevPrimaryUp) {
+        addTimeline('Primary server recovered', '#00e87a');
+        showAlert('Primary recovered — failback in progress', 'recovery');
+      }
+      prevPrimaryUp = true;
+
+    } catch(e) {
+      primaryUp = false;
+      hbPrimaryHistory.push(false);
+      if (hbPrimaryHistory.length > HB_MAX) hbPrimaryHistory.shift();
+
+      document.getElementById('primary-reqs').textContent       = '—';
+      document.getElementById('primary-uptime').textContent     = '—';
+      document.getElementById('primary-status-val').textContent = 'DOWN';
+      document.getElementById('primary-status-val').className   = 'stat-val red';
+      document.getElementById('primary-backup-reach').textContent = '—';
+      document.getElementById('primary-backup-reach').className   = 'stat-val';
+      document.getElementById('primary-card').className  = 'server-card down';
+      document.getElementById('primary-ring').className  = 'status-ring down';
+      document.getElementById('primary-badge').className = 'srv-badge badge-down';
+      document.getElementById('primary-badge').textContent = 'DOWN';
+      document.getElementById('topo-primary').className   = 'topo-node offline';
+      document.getElementById('topo-line-primary').className  = 'topo-line inactive';
+      document.getElementById('topo-arrow-primary').className = 'topo-arrow inactive';
+
+      if (prevPrimaryUp) {
+        addTimeline('Primary server DOWN', '#ff3b5c');
+        showAlert('Primary is DOWN — backup taking over', false);
+      }
+      prevPrimaryUp = false;
+    }
+    drawHb('primary-hb', hbPrimaryHistory, '#00e87a');
+  }
+
+  // ─── Poll backup ─────────────────────────────────────────────────────────────
+
+  async function pollBackup() {
+    try {
+      const res = await fetch(BACKUP + '/status', { signal: AbortSignal.timeout(1500) });
+      const d   = await res.json();
+
+      hbBackupHistory.push(d.last_heartbeat_seconds_ago < 3);
+      if (hbBackupHistory.length > HB_MAX) hbBackupHistory.shift();
+
+      document.getElementById('backup-replicated').textContent = d.records_replicated;
+      document.getElementById('backup-reqs').textContent       = d.requests_handled;
+
+      const hbAgo   = d.last_heartbeat_seconds_ago;
+      const hbAgoEl = document.getElementById('backup-hb-ago');
+      hbAgoEl.textContent = hbAgo + 's ago';
+      hbAgoEl.className   = 'stat-val ' + (hbAgo < 3 ? '' : hbAgo < 5 ? 'amber' : 'red');
+
+      const alive   = d.primary_alive;
+      const aliveEl = document.getElementById('backup-primary-alive');
+      aliveEl.textContent = alive ? 'Yes' : 'No';
+      aliveEl.className   = 'stat-val ' + (alive ? 'green' : 'red');
+
+      backupMode = d.mode;
+      const badge      = document.getElementById('backup-badge');
+      const card       = document.getElementById('backup-card');
+      const topoBackup = document.getElementById('topo-backup');
+      const routingLabel = document.getElementById('routing-label');
+
+      if (d.mode === 'ACTIVE') {
+        badge.className = 'srv-badge badge-active';
+        badge.textContent = 'ACTIVE';
+        card.className    = 'server-card active-mode';
+        document.getElementById('backup-ring').className = 'status-ring amber';
+        topoBackup.className = 'topo-node online';
+        document.getElementById('topo-line-backup').className  = 'topo-line active';
+        document.getElementById('topo-arrow-backup').className = 'topo-arrow';
+        // Primary line goes inactive when backup is handling traffic
+        document.getElementById('topo-line-primary').className  = 'topo-line inactive';
+        document.getElementById('topo-arrow-primary').className = 'topo-arrow inactive';
+        routingLabel.innerHTML = 'Routing to: <strong style="color:var(--amber)">Backup</strong>';
+        routingLabel.className = 'client-routing on-backup';
+
+        if (prevBackupMode !== 'ACTIVE') {
+          addTimeline('Backup now ACTIVE — handling requests', '#ffb800');
+          addFeedItem('BACKUP', 'Taking over request handling', null, 'OK');
+        }
+      } else {
+        badge.className = 'srv-badge badge-standby';
+        badge.textContent = 'STANDBY';
+        card.className    = 'server-card';
+        document.getElementById('backup-ring').className = 'status-ring';
+        topoBackup.className = 'topo-node';
+        document.getElementById('topo-line-backup').className  = 'topo-line inactive';
+        document.getElementById('topo-arrow-backup').className = 'topo-arrow inactive';
+        if (primaryUp) {
+          document.getElementById('topo-line-primary').className  = 'topo-line active';
+          document.getElementById('topo-arrow-primary').className = 'topo-arrow';
+        }
+        routingLabel.innerHTML = 'Routing to: <strong>Primary</strong>';
+        routingLabel.className = 'client-routing';
+
+        if (prevBackupMode === 'ACTIVE') {
+          addTimeline('Backup returned to STANDBY', '#00e87a');
+        }
+      }
+      prevBackupMode = d.mode;
+
+    } catch(e) {
+      hbBackupHistory.push(false);
+      if (hbBackupHistory.length > HB_MAX) hbBackupHistory.shift();
+    }
+    drawHb('backup-hb', hbBackupHistory, '#00e87a');
+  }
+
+  // ─── Poll client server ──────────────────────────────────────────────────────
+
+  async function pollClient() {
+    try {
+      const res = await fetch(CLIENT_SRV + '/status', { signal: AbortSignal.timeout(1500) });
+      const d   = await res.json();
+
+      // Sync running state
+      clientRunning = d.running;
+      if (!prevClientRunning && d.running) {
+        document.getElementById('start-btn').style.display = 'none';
+        document.getElementById('stop-btn').style.display  = 'block';
+      } else if (prevClientRunning && !d.running) {
+        document.getElementById('start-btn').style.display = 'block';
+        document.getElementById('stop-btn').style.display  = 'none';
+        if (d.mode) addTimeline('Client finished — ' + d.mode + ' mode', '#4a5a7a');
+      }
+      prevClientRunning = d.running;
+
+      // Progress
+      const count = d.req_count || 0;
+      const total = d.total     || 0;
+      document.getElementById('req-counter').textContent =
+        d.mode === 'session' ? `req #${count}` : `${count} / ${total}`;
+
+      if (d.mode === 'session') {
+        document.getElementById('progress-fill').style.width = '100%';
+        document.getElementById('progress-pct').textContent  = '∞';
+      } else if (total > 0) {
+        const pct = Math.min(100, Math.round((count / total) * 100));
+        document.getElementById('progress-fill').style.width = pct + '%';
+        document.getElementById('progress-pct').textContent  = pct + '%';
+      }
+
+      // Routing indicator from client_server state
+      if (d.use_backup !== undefined) {
+        const rl = document.getElementById('routing-label');
+        if (d.use_backup) {
+          rl.innerHTML  = 'Routing to: <strong style="color:var(--amber)">Backup</strong>';
+          rl.className  = 'client-routing on-backup';
+        } else {
+          rl.innerHTML  = 'Routing to: <strong>Primary</strong>';
+          rl.className  = 'client-routing';
+        }
+      }
+
+      // Feed — sync new entries from client_server feed
+      const feed = d.feed || [];
+      if (feed.length > lastFeedLen || (lastFeedLen > 0 && feed.length < lastFeedLen)) {
+        // Feed was reset or has new items — redraw top entries
+        const newItems = feed.slice(0, Math.max(0, feed.length - lastFeedLen));
+        // Walk in reverse so newest ends up on top
+        for (let i = newItems.length - 1; i >= 0; i--) {
+          const entry = newItems[i];
+          addFeedItem(entry.who, entry.msg, entry.time, entry.status);
+        }
+      }
+      lastFeedLen = feed.length;
+
+    } catch(e) {
+      // client_server not reachable — that's okay, just skip
+    }
+  }
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+  function formatUptime(s) {
+    if (!s && s !== 0) return '—';
+    if (s < 60)  return s + 's';
+    const m = Math.floor(s / 60), sec = s % 60;
+    return m + 'm ' + sec + 's';
+  }
+
+  function updateClock() {
+    document.getElementById('clock').textContent =
+      new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  }
+
+  // ─── Poll loop ───────────────────────────────────────────────────────────────
+
+  async function poll() {
+    await Promise.all([pollPrimary(), pollBackup(), pollClient()]);
+  }
+
+  setInterval(updateClock, 1000);
+  setInterval(poll, 1000);
+  updateClock();
+  poll();
+  addTimeline('Dashboard started', '#3b8eff');
+</script>
+</body>
+</html>
